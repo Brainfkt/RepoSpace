@@ -2,6 +2,15 @@ const FILE_MIN_SIZE = 0.32;
 const FILE_MAX_SIZE = 1.12;
 const FOLDER_MIN_SIZE = 1.15;
 const FOLDER_MAX_SIZE = 2.45;
+const FOLDER_ROW_WEIGHT = 1.35;
+
+export const REPOSITORY_INTERIOR = {
+  bandGap: 0.5,
+  depthOffset: 0.14,
+  height: 6.55,
+  width: 10.7,
+  yCenter: 0.18,
+};
 
 export function getDescendantSize(node) {
   if (!node) return 0;
@@ -40,14 +49,30 @@ export function getDescendantFiles(nodeOrNodes) {
   return getDescendantFiles(nodeOrNodes.children ?? []);
 }
 
+export function getRenderedFilesForView(repositories, activeRepoId, folderPath = "") {
+  if (!activeRepoId) return getDescendantFiles(repositories);
+
+  const repo = repositories.find((repository) => repository.id === activeRepoId);
+  return getVisibleChildren(repo, folderPath).flatMap((node) =>
+    node.type === "file" ? [node] : getDescendantFiles(node),
+  );
+}
+
+export function getVisibleFileTypes(files) {
+  return [...new Set(files.map((file) => file.language || "Default"))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
 export function clampFileSize(bytes) {
   const scaled = 0.22 + Math.cbrt(Math.max(bytes, 1) / 1024) * 0.24;
   return clamp(scaled, FILE_MIN_SIZE, FILE_MAX_SIZE);
 }
 
-export function clampFolderSize(bytes) {
-  const scaled = 0.84 + Math.cbrt(Math.max(bytes, 1) / 1024) * 0.2;
-  return clamp(scaled, FOLDER_MIN_SIZE, FOLDER_MAX_SIZE);
+export function clampFolderSize(bytes, fileCount = 0) {
+  const byteScaled = 0.84 + Math.cbrt(Math.max(bytes, 1) / 1024) * 0.2;
+  const countScaled = 0.98 + Math.cbrt(Math.max(fileCount, 1)) * 0.22;
+  return clamp(Math.max(byteScaled, countScaled), FOLDER_MIN_SIZE, FOLDER_MAX_SIZE);
 }
 
 export function getRepoScale(bytes) {
@@ -56,27 +81,41 @@ export function getRepoScale(bytes) {
 
 export function layoutBlocks(nodes, options = {}) {
   const {
-    columns = 3,
-    spacing = 2.25,
-    rowSpacing = spacing + 0.52,
-    depthOffset = 0.14,
+    bandGap = REPOSITORY_INTERIOR.bandGap,
+    depthOffset = REPOSITORY_INTERIOR.depthOffset,
+    height = REPOSITORY_INTERIOR.height,
+    width = REPOSITORY_INTERIOR.width,
+    yCenter = REPOSITORY_INTERIOR.yCenter,
   } = options;
-  const rows = Math.max(1, Math.ceil(nodes.length / columns));
+  const folders = nodes.filter((node) => node.type === "folder");
+  const files = nodes.filter((node) => node.type === "file");
+  const gap = folders.length && files.length ? bandGap : 0;
+  const grid = chooseInteriorGrid(folders.length, files.length, width, height - gap);
+  const unitRowHeight =
+    (height - gap) /
+    Math.max(1, grid.folderRows * FOLDER_ROW_WEIGHT + grid.fileRows);
+  const top = yCenter + height / 2;
+  const folderHeight = grid.folderRows * unitRowHeight * FOLDER_ROW_WEIGHT;
+  const fileTop = top - folderHeight - gap;
 
-  return nodes.map((node, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const depthStep = (column + row) % 3;
-
-    return {
-      node,
-      position: [
-        (column - (Math.min(columns, nodes.length) - 1) / 2) * spacing,
-        ((rows - 1) / 2 - row) * rowSpacing,
-        (depthStep - 1) * depthOffset,
-      ],
-    };
-  });
+  return [
+    ...layoutBand(folders, {
+      columns: grid.folderColumns,
+      depthOffset,
+      kind: "folder",
+      rowHeight: unitRowHeight * FOLDER_ROW_WEIGHT,
+      top,
+      width,
+    }),
+    ...layoutBand(files, {
+      columns: grid.fileColumns,
+      depthOffset,
+      kind: "file",
+      rowHeight: unitRowHeight,
+      top: folders.length ? fileTop : top,
+      width,
+    }),
+  ];
 }
 
 export function layoutPreviewFiles(files, shellSize) {
@@ -131,6 +170,128 @@ export function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function chooseInteriorGrid(folderCount, fileCount, width, height) {
+  const folderCandidates = getGridCandidates(folderCount, "folder", width, height);
+  const fileCandidates = getGridCandidates(fileCount, "file", width, height);
+  let bestGrid = null;
+
+  for (const folderGrid of folderCandidates) {
+    for (const fileGrid of fileCandidates) {
+      const rowUnits = folderGrid.rows * FOLDER_ROW_WEIGHT + fileGrid.rows;
+      const unitRowHeight = height / Math.max(1, rowUnits);
+      const folderCellSize = getCellSize(
+        width,
+        folderGrid.columns,
+        unitRowHeight * FOLDER_ROW_WEIGHT,
+        "folder",
+      );
+      const fileCellSize = getCellSize(
+        width,
+        fileGrid.columns,
+        unitRowHeight,
+        "file",
+      );
+      const visibleCellSizes = [
+        folderCount ? folderCellSize : null,
+        fileCount ? fileCellSize : null,
+      ].filter((size) => size !== null);
+      const score = visibleCellSizes.length ? Math.min(...visibleCellSizes) : 0;
+      const emptyCells = folderGrid.emptyCells + fileGrid.emptyCells;
+      const totalRows = folderGrid.rows + fileGrid.rows;
+
+      if (
+        !bestGrid ||
+        score > bestGrid.score ||
+        (score === bestGrid.score && emptyCells < bestGrid.emptyCells) ||
+        (score === bestGrid.score &&
+          emptyCells === bestGrid.emptyCells &&
+          totalRows < bestGrid.totalRows)
+      ) {
+        bestGrid = {
+          emptyCells,
+          fileColumns: fileGrid.columns,
+          fileRows: fileGrid.rows,
+          folderColumns: folderGrid.columns,
+          folderRows: folderGrid.rows,
+          score,
+          totalRows,
+        };
+      }
+    }
+  }
+
+  return bestGrid;
+}
+
+function getGridCandidates(count, kind, width, height) {
+  if (!count) return [{ columns: 0, emptyCells: 0, rows: 0 }];
+
+  const baseColumns = kind === "folder" ? 4 : 5;
+  const maximumColumns = Math.max(
+    baseColumns,
+    Math.ceil(Math.sqrt(count * (width / height))),
+  );
+  const minimumRows = Math.ceil(count / maximumColumns);
+  const maximumRows = Math.min(count, Math.ceil(Math.sqrt(count) * 2.4) + 2);
+  const candidates = [];
+
+  for (let rows = minimumRows; rows <= maximumRows; rows += 1) {
+    const columns = Math.ceil(count / rows);
+    candidates.push({
+      columns,
+      emptyCells: rows * columns - count,
+      rows,
+    });
+  }
+
+  return candidates;
+}
+
+function layoutBand(nodes, options) {
+  if (!nodes.length) return [];
+
+  const { columns, depthOffset, kind, rowHeight, top, width } = options;
+  const cellWidth = width / columns;
+  const maxVisualSize = getCellSize(width, columns, rowHeight, kind);
+
+  return nodes.map((node, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const itemsInRow = Math.min(columns, nodes.length - row * columns);
+    const labelMode =
+      cellWidth >= getEstimatedLabelWidth(node.name) &&
+      rowHeight >= (kind === "folder" ? 1.32 : 1.02)
+        ? "always"
+        : "hover";
+
+    return {
+      labelMode,
+      labelOffset: [
+        ((column + row) % 3 - 1) * 0.08,
+        (column % 2) * -0.04,
+        0,
+      ],
+      maxVisualSize,
+      node,
+      position: [
+        (column - (itemsInRow - 1) / 2) * cellWidth,
+        top - (row + 0.5) * rowHeight,
+        (((column + row) % 3) - 1) * depthOffset,
+      ],
+    };
+  });
+}
+
+function getCellSize(width, columns, rowHeight, kind) {
+  if (!columns) return Infinity;
+  const maximum = kind === "folder" ? FOLDER_MAX_SIZE : FILE_MAX_SIZE;
+  return Math.min(maximum, (width / columns) * 0.72, rowHeight * 0.68);
+}
+
+function getEstimatedLabelWidth(name) {
+  return Math.min(3.4, Math.max(1.1, 0.62 + name.length * 0.075));
 }
 
 function clamp(value, minimum, maximum) {

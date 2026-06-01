@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import { repos } from "../data/repos";
 import {
   clampFileSize,
+  clampFolderSize,
   findNodeByPath,
   formatBytes,
   getBreadcrumbItems,
   getDescendantFiles,
   getDescendantSize,
+  getRenderedFilesForView,
   getVisibleChildren,
+  getVisibleFileTypes,
   layoutBlocks,
   layoutPreviewFiles,
+  REPOSITORY_INTERIOR,
 } from "./repoTree";
 
 const atlasRepo = repos[0];
@@ -73,6 +77,11 @@ describe("repoTree", () => {
     expect(clampFileSize(1024 * 1024 * 1024)).toBeLessThanOrEqual(1.12);
   });
 
+  it("lets descendant count increase folder size before the grid cap is applied", () => {
+    expect(clampFolderSize(1, 64)).toBeGreaterThan(clampFolderSize(1, 1));
+    expect(clampFolderSize(1024 * 1024 * 1024, 64)).toBeLessThanOrEqual(2.45);
+  });
+
   it("produces deterministic spatial positions", () => {
     const children = getVisibleChildren(atlasRepo);
 
@@ -80,18 +89,66 @@ describe("repoTree", () => {
     expect(layoutBlocks(children)[0].position).toHaveLength(3);
   });
 
-  it("keeps sibling nodes on a readable plane with label row clearance", () => {
-    const blocks = layoutBlocks(getVisibleChildren(atlasRepo), {
-      columns: 3,
-      spacing: 3.15,
-      rowSpacing: 3.72,
-      depthOffset: 0.14,
-    });
+  it("keeps sibling nodes on a readable plane with separate folder and file bands", () => {
+    const blocks = layoutBlocks(getVisibleChildren(atlasRepo));
     const depths = blocks.map(({ position }) => Math.abs(position[2]));
+    const folderBlocks = blocks.filter(({ node }) => node.type === "folder");
+    const fileBlocks = blocks.filter(({ node }) => node.type === "file");
 
     expect(Math.max(...depths)).toBeLessThanOrEqual(0.14);
-    expect(blocks[0].position[1] - blocks[3].position[1]).toBe(3.72);
-    expect(new Set(blocks.slice(0, 3).map(({ position }) => position[0])).size).toBe(3);
+    expect(Math.min(...folderBlocks.map(({ position }) => position[1]))).toBeGreaterThan(
+      Math.max(...fileBlocks.map(({ position }) => position[1])),
+    );
+    expect(new Set(folderBlocks.map(({ position }) => position[0])).size).toBeGreaterThan(1);
+  });
+
+  it.each([1, 2, 16, 120])(
+    "keeps every one of %i mixed sibling nodes inside the padded repository bounds",
+    (count) => {
+      const nodes = Array.from({ length: count }, (_, index) =>
+        index % 3 === 0 ? createFolder(index) : createFile(index),
+      );
+      const blocks = layoutBlocks(nodes);
+      const halfWidth = REPOSITORY_INTERIOR.width / 2;
+      const halfHeight = REPOSITORY_INTERIOR.height / 2;
+      const minimumY = REPOSITORY_INTERIOR.yCenter - halfHeight;
+      const maximumY = REPOSITORY_INTERIOR.yCenter + halfHeight;
+
+      expect(blocks).toHaveLength(nodes.length);
+      expect(new Set(blocks.map(({ node }) => node.path)).size).toBe(nodes.length);
+      expect(
+        blocks.every(
+          ({ maxVisualSize, position }) =>
+            Math.abs(position[0]) + maxVisualSize / 2 <= halfWidth &&
+            position[1] - maxVisualSize / 2 >= minimumY &&
+            position[1] + maxVisualSize / 2 <= maximumY,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("keeps all dense blocks while switching crowded labels to hover mode", () => {
+    const nodes = Array.from({ length: 120 }, (_, index) => createFile(index));
+    const blocks = layoutBlocks(nodes);
+
+    expect(blocks).toHaveLength(nodes.length);
+    expect(blocks.every(({ labelMode }) => labelMode === "hover")).toBe(true);
+  });
+
+  it("derives visible file types from direct blocks and rendered folder previews", () => {
+    const renderedFiles = getRenderedFilesForView([atlasRepo], atlasRepo.id);
+
+    expect(renderedFiles.map((file) => file.path)).toContain(
+      "atlas-dashboard/src/components/Scene.jsx",
+    );
+    expect(renderedFiles.map((file) => file.path)).toContain("atlas-dashboard/README.md");
+    expect(getVisibleFileTypes(renderedFiles)).toEqual([
+      "CSS",
+      "JavaScript",
+      "JSON",
+      "Markdown",
+      "TypeScript",
+    ]);
   });
 
   it("builds breadcrumb items and formats byte values", () => {
@@ -104,3 +161,22 @@ describe("repoTree", () => {
     expect(formatBytes(12698)).toBe("12.4 KB");
   });
 });
+
+function createFile(index) {
+  return {
+    language: "Text",
+    name: `file-${index}.txt`,
+    path: `repo/file-${index}.txt`,
+    size: 1024,
+    type: "file",
+  };
+}
+
+function createFolder(index) {
+  return {
+    children: [createFile(index)],
+    name: `folder-${index}`,
+    path: `repo/folder-${index}`,
+    type: "folder",
+  };
+}
