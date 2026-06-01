@@ -28,7 +28,11 @@ const LANGUAGE_BY_EXTENSION = {
   h: "C",
   hpp: "C++",
   html: "HTML",
+  ini: "INI",
+  ipynb: "Jupyter Notebook",
   java: "Java",
+  jpeg: "JPEG",
+  jpg: "JPEG",
   js: "JavaScript",
   jsx: "JavaScript",
   json: "JSON",
@@ -36,6 +40,7 @@ const LANGUAGE_BY_EXTENSION = {
   less: "CSS",
   md: "Markdown",
   mdx: "Markdown",
+  gif: "GIF",
   pdf: "PDF",
   php: "PHP",
   png: "PNG",
@@ -48,11 +53,13 @@ const LANGUAGE_BY_EXTENSION = {
   sql: "SQL",
   swift: "Swift",
   svg: "SVG",
+  toml: "TOML",
   txt: "Text",
   ts: "TypeScript",
   tsx: "TypeScript",
   vert: "GLSL",
   vue: "Vue",
+  webp: "WebP",
   xml: "XML",
   yaml: "YAML",
   yml: "YAML",
@@ -171,6 +178,7 @@ export function normalizeGitHubRepository(repository, languages, treeEntries) {
     const parentPath = parts.join("/");
     const parent = ensureFolder(repository, folders, parentPath);
     const language = inferFileLanguage(name);
+    const languageLabel = language === "Default" ? "Other" : language;
 
     parent.children.push({
       type: "file",
@@ -180,7 +188,7 @@ export function normalizeGitHubRepository(repository, languages, treeEntries) {
       extension: getExtension(name),
       language,
       size: entry.size ?? 0,
-      description: `${language} file from ${repository.name}.`,
+      description: `${languageLabel} file from ${repository.name}.`,
       githubUrl: `${repository.html_url}/blob/${encodeURIComponent(
         repository.default_branch || "HEAD",
       )}/${encodeGitHubPath(entry.path)}`,
@@ -212,10 +220,13 @@ export function normalizeGitHubRepository(repository, languages, treeEntries) {
 export function inferFileLanguage(fileName) {
   const normalizedName = fileName.toLowerCase();
   const extension = getExtension(fileName);
+
+  if (normalizedName.startsWith(".env")) return "Text";
+
   return (
     LANGUAGE_BY_FILENAME[normalizedName] ||
     LANGUAGE_BY_EXTENSION[extension] ||
-    "Text"
+    "Default"
   );
 }
 

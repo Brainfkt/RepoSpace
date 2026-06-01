@@ -98,12 +98,20 @@ describe("GitHub REST adapter", () => {
     ]);
   });
 
-  it("uses each file's own extension or a neutral text fallback", () => {
+  it("uses each file's own extension and reserves neutral fallback for unknown types", () => {
     expect(inferFileLanguage("App.tsx")).toBe("TypeScript");
     expect(inferFileLanguage("styles.scss")).toBe("CSS");
     expect(inferFileLanguage("Dockerfile")).toBe("Dockerfile");
     expect(inferFileLanguage(".gitignore")).toBe("Text");
-    expect(inferFileLanguage("unknown.custom")).toBe("Text");
+    expect(inferFileLanguage(".env.example")).toBe("Text");
+    expect(inferFileLanguage("notes.txt")).toBe("Text");
+    expect(inferFileLanguage("records.json")).toBe("JSON");
+    expect(inferFileLanguage("preview.png")).toBe("PNG");
+    expect(inferFileLanguage("pipeline.yml")).toBe("YAML");
+    expect(inferFileLanguage("README.md")).toBe("Markdown");
+    expect(inferFileLanguage("results.csv")).toBe("CSV");
+    expect(inferFileLanguage("query.sql")).toBe("SQL");
+    expect(inferFileLanguage("unknown.custom")).toBe("Default");
   });
 });
 
