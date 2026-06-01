@@ -9,15 +9,22 @@ import { clampFileSize } from "../utils/repoTree";
 const NORMAL_SCALE = new THREE.Vector3(1, 1, 1);
 const HOVER_SCALE = new THREE.Vector3(1.08, 1.08, 1.08);
 
-export default function FileBlock({ file, position }) {
+export default function FileBlock({
+  file,
+  labelMode = "always",
+  labelOffset = [0, 0, 0],
+  maxVisualSize = Infinity,
+  position,
+}) {
   const selectedFile = useNavigationStore((state) => state.selectedFile);
   const selectFile = useNavigationStore((state) => state.selectFile);
   const [hovered, setHovered] = useState(false);
   const groupRef = useRef(null);
   const materialRef = useRef(null);
-  const size = clampFileSize(file.size);
+  const size = Math.min(clampFileSize(file.size), maxVisualSize);
   const color = getLanguageColor(file.language);
   const isSelected = selectedFile?.path === file.path;
+  const isDensityHidden = labelMode === "hover" && !hovered && !isSelected;
 
   useFrame((_, delta) => {
     if (!groupRef.current || !materialRef.current) return;
@@ -57,11 +64,23 @@ export default function FileBlock({ file, position }) {
         />
         <Edges color={isSelected ? "#c7dcff" : color} opacity={isSelected ? 1 : 0.62} />
       </mesh>
-      <Html center position={[0, -size * 0.92, size * 0.52]} zIndexRange={[3, 0]}>
+      <Html
+        center
+        position={[
+          labelOffset[0],
+          -size * 0.92 + labelOffset[1],
+          size * 0.52 + labelOffset[2],
+        ]}
+        zIndexRange={[3, 0]}
+      >
         <button
-          className={`block-label block-label--file ${isSelected ? "is-selected" : ""}`}
+          className={`block-label block-label--file ${
+            isSelected ? "is-selected" : ""
+          } ${isDensityHidden ? "is-density-hidden" : ""}`}
           data-testid={`file-${file.path}`}
+          onBlur={() => setHovered(false)}
           onClick={openFile}
+          onFocus={() => setHovered(true)}
           type="button"
         >
           <span className="block-label__color" style={{ backgroundColor: color }} />

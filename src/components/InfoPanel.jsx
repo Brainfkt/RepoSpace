@@ -1,14 +1,16 @@
 import { motion } from "framer-motion";
-import { getLanguageColor } from "../constants/languages";
+import { getLanguageColor, getLanguageLabel } from "../constants/languages";
 import { useNavigationStore } from "../store/useNavigationStore";
 import { formatBytes } from "../utils/repoTree";
 
 function getLanguageInitials(language) {
+  const label = getLanguageLabel(language);
+
   return language === "TypeScript"
     ? "TS"
     : language === "JavaScript"
       ? "JS"
-      : language.slice(0, 2).toUpperCase();
+      : label.slice(0, 2).toUpperCase();
 }
 
 export default function InfoPanel({ file }) {
@@ -44,7 +46,7 @@ export default function InfoPanel({ file }) {
         <dl className="info-panel__metadata">
           <div>
             <dt>Language</dt>
-            <dd style={{ color }}>{file.language}</dd>
+            <dd style={{ color }}>{getLanguageLabel(file.language)}</dd>
           </div>
           <div>
             <dt>Size</dt>

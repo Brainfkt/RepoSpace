@@ -31,12 +31,23 @@ function HintBlock({ file, position, size }) {
   );
 }
 
-export default function FolderBlock({ folder, position }) {
+export default function FolderBlock({
+  folder,
+  labelMode = "always",
+  labelOffset = [0, 0, 0],
+  maxVisualSize = Infinity,
+  position,
+}) {
   const openFolder = useNavigationStore((state) => state.openFolder);
   const [hovered, setHovered] = useState(false);
   const groupRef = useRef(null);
-  const shellSize = clampFolderSize(getDescendantSize(folder));
-  const hints = layoutPreviewFiles(getDescendantFiles(folder), shellSize * 0.78);
+  const descendantFiles = getDescendantFiles(folder);
+  const shellSize = Math.min(
+    clampFolderSize(getDescendantSize(folder), descendantFiles.length),
+    maxVisualSize,
+  );
+  const hints = layoutPreviewFiles(descendantFiles, shellSize * 0.78);
+  const isDensityHidden = labelMode === "hover" && !hovered;
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -76,11 +87,23 @@ export default function FolderBlock({ folder, position }) {
           <HintBlock file={file} key={file.path} position={hintPosition} size={size} />
         ))}
       </group>
-      <Html center position={[0, -shellSize * 0.72, shellSize * 0.5]} zIndexRange={[3, 0]}>
+      <Html
+        center
+        position={[
+          labelOffset[0],
+          -shellSize * 0.72 + labelOffset[1],
+          shellSize * 0.5 + labelOffset[2],
+        ]}
+        zIndexRange={[3, 0]}
+      >
         <button
-          className="block-label block-label--folder"
+          className={`block-label block-label--folder ${
+            isDensityHidden ? "is-density-hidden" : ""
+          }`}
           data-testid={`folder-${folder.path}`}
+          onBlur={() => setHovered(false)}
           onClick={drillIn}
+          onFocus={() => setHovered(true)}
           type="button"
         >
           <span aria-hidden="true">+</span>
