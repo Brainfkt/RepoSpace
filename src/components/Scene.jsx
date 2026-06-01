@@ -42,21 +42,30 @@ function RepositoryShell() {
 
 function RepositoryInterior({ repo, folderPath }) {
   const visibleChildren = getVisibleChildren(repo, folderPath);
-  const blocks = layoutBlocks(visibleChildren, {
-    columns: visibleChildren.length > 8 ? 4 : 3,
-    spacing: visibleChildren.length > 8 ? 2.7 : 3.15,
-    rowSpacing: visibleChildren.length > 8 ? 3.25 : 3.72,
-    depthOffset: 0.14,
-  });
+  const blocks = layoutBlocks(visibleChildren);
 
   return (
     <group>
       <RepositoryShell />
-      {blocks.map(({ node, position }) =>
+      {blocks.map(({ labelMode, labelOffset, maxVisualSize, node, position }) =>
         node.type === "folder" ? (
-          <FolderBlock folder={node} key={node.path} position={position} />
+          <FolderBlock
+            folder={node}
+            key={node.path}
+            labelMode={labelMode}
+            labelOffset={labelOffset}
+            maxVisualSize={maxVisualSize}
+            position={position}
+          />
         ) : (
-          <FileBlock file={node} key={node.path} position={position} />
+          <FileBlock
+            file={node}
+            key={node.path}
+            labelMode={labelMode}
+            labelOffset={labelOffset}
+            maxVisualSize={maxVisualSize}
+            position={position}
+          />
         ),
       )}
     </group>
